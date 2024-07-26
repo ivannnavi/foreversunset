@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    
+    <title>Forever Sunset</title>
+    <link href="https://fonts.googleapis.com/css2?family=Merriweather&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Merriweather', serif;
+            background-color: #333;
+            color: white;
+            margin: 0;
+            padding: 0;
+            text-align: center; /* Center align text */
+        }
+
+        #header {
+            padding: 20px 0;
+        }
+
+        #header h1 {
+            margin: 0;
+            font-size: 36px; /* Larger font size for header */
+        }
+
+        #header p {
+            margin: 0;
+            font-size: 14px; /* Smaller font size for byline */
+        }
+
+        #player-container {
+            position: relative;
+            width: 1040px;
+            margin: 20px auto;
+        }
+
+        #player {
+            width: 100%;
+            height: 580px;
+        }
+
+        #location {
+            color: lightgrey; /* Change text color to light grey */
+
+margin-top: 10px;
+margin-bottom: 30px;
+font-size: 16px; /* Larger font size for header */
+        }
+
+        .dropdown-container {
+            color: lightgrey; /* Change text color to light grey */
+
+    display: inline-block;
+    margin-right: 20px; /* Adjust as needed */
+    vertical-align: top;
+}
+
+.dropdown-label {
+
+    font-family: 'Merriweather', serif;
+    font-size: 14px;
+    color: lightgrey; /* Change text color to light grey */
+    margin-bottom: 5px; /* Add margin below the label */
+    display: block; /* Ensures the margin-bottom works properly */
+}
+
+.dropdown select {
+    font-family: 'Merriweather', serif;
+    font-size: 14px;
+    padding: 8px;
+    border: none;
+    background-color: #555;
+    color: white;
+    cursor: pointer;
+    appearance: none; /* Remove default arrow */
+    -webkit-appearance: none; /* Remove default arrow on iOS Safari */
+}
+
+.dropdown select option {
+    font-family: 'Merriweather', serif;
+    font-size: 14px;
+    background-color: #555;
+    color: white;
+}
+
+/* Additional styling for specific dropdowns */
+#streamSelect {
+        top: 10px;
+
+    width: 200px; /* Adjust width as needed */
+}
+
+#specificEventSelect {
+    width: 250px; /* Adjust width as needed */
+}
+#debug-container {
+    width: 100%;
+    max-height: 200px; /* Adjust height as needed */
+    overflow-y: auto; /* Enable vertical scrolling */
+    margin-top: 20px; /* Adjust margin as needed */
+    padding: 30px;
+    background-color: rgba(0, 0, 0, 0.5);
+    color: white;
+}
+
+#debug {
+    font-size: 12px; /* Adjust font size */
+    text-align: left;
+    margin: 0;
+    padding: 0;
+}
+
+#debug h3 {
+    
+    margin-top: 0;
+}
+
+        .debug-info {
+            margin-bottom: 5px;
+        }
+
+        .debug-info:last-child {
+            margin-bottom: 0;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/suncalc/1.8.0/suncalc.min.js"></script>
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <script src="locations.js"></script>
+    <script>
+        let player;
+        let playerReady = false;
+        let currentVideoId = 'loHbMM9JfCs'; // Default video ID
+
+        // Function to update sunrise and sunset times for each location
+        function updateSunTimes(location) {
+            var now = new Date();
+            var times = SunCalc.getTimes(now, location.lat, location.lon);
+            location.sunrise = times.sunrise;
+            location.sunset = times.sunset;
+        }
+
+        // Function to determine tags based on proximity to sunrise or sunset
+        function getProximityTag(location, now) {
+            var timeToSunrise = Math.abs(location.sunrise - now);
+            var timeToSunset = Math.abs(location.sunset - now);
+
+            // Assign tags based on proximity
+            if (timeToSunrise < timeToSunset) {
+                location.tag = `sunrise ${(timeToSunrise / 1000).toFixed(0)}`.padStart(5, '0'); // Sunrise tag
+                return timeToSunrise;
+            } else {
+                location.tag = `sunset ${(timeToSunset / 1000).toFixed(0)}`.padStart(5, '0'); // Sunset tag
+                return timeToSunset;
+            }
+        }
+
+        // Function to initialize sunrise and sunset times and tags
+        function initializeSunTimes() {
+            var now = new Date();
+            locations.forEach(function(location) {
+                updateSunTimes(location);
+                getProximityTag(location, now);
+
+                // Calculate hours until next sunrise or sunset
+                var timeToEvent = (location.tag.startsWith('sunrise') ? location.sunrise : location.sunset) - now;
+                location.hoursToEvent = (timeToEvent / (1000 * 60 * 60)).toFixed(2); // Hours until event
+            });
+
+            // Sort locations based on sunrise or sunset first, then by proximity
+            locations.sort(function(a, b) {
+                if (a.tag.startsWith('sunrise') && b.tag.startsWith('sunset')) {
+                    return -1; // A is sunrise, B is sunset
+                }
+                if (a.tag.startsWith('sunset') && b.tag.startsWith('sunrise')) {
+                    return 1; // A is sunset, B is sunrise
+                }
+
+                // Compare hoursToEvent, ensuring positive values are sorted before negative values
+                if (a.hoursToEvent >= 0 && b.hoursToEvent >= 0) {
+                    return a.hoursToEvent - b.hoursToEvent; // Sort by ascending hoursToEvent
+                } else if (a.hoursToEvent < 0 && b.hoursToEvent < 0) {
+                    return b.hoursToEvent - a.hoursToEvent; // Sort by descending hoursToEvent
+                } else {
+                    return a.hoursToEvent >= 0 ? -1 : 1; // Sort positive values first
+                }
+            });
+
+            // Assign sequential tags after sorting
+            var sunriseCount = 0;
+            var sunsetCount = 0;
+            locations.forEach(function(location, index) {
+                if (location.tag.startsWith('sunrise')) {
+                    sunriseCount++;
+                    location.tag = `0${sunriseCount} sunrise`;
+                } else if (location.tag.startsWith('sunset')) {
+                    sunsetCount++;
+                    location.tag = `0${sunsetCount} sunset`;
+                }
+            });
+
+            // Update debug information
+            var debugElement = document.getElementById('debug');
+            debugElement.innerHTML = '<h3>Estimated Times to next event:</h3>';
+            locations.forEach(function(location) {
+                debugElement.innerHTML += `<p>${location.location}: Next event in ${location.hoursToEvent} hours (${location.tag})</p>`;
+            });
+
+// Function to populate specific event dropdown options
+function populateSpecificEventDropdown(type = 'sunset') {
+    var specificEventSelect = document.getElementById('specificEventSelect');
+    specificEventSelect.innerHTML = '<option value="">-- Select --</option>';
+
+    var now = new Date();
+    var filteredLocations = locations.filter(function(location) {
+        return location.tag.startsWith('01 ' + type) && (type === 'sunrise' ? location.sunrise > now : location.sunset > now);
+    });
+
+    filteredLocations.forEach(function(location) {
+        var option = document.createElement('option');
+        option.value = location.tag;
+        option.text = `${location.tag} - ${location.location}`;
+        specificEventSelect.appendChild(option);
+    });
+
+    // Automatically select the first event
+    specificEventSelect.value = `01 ${type}`;
+}
+
+            // Automatically select the sunset stream on page load
+            document.getElementById('streamSelect').value = 'closestSunset';
+            handleDropdownChange();
+        }
+
+        // Function to find the closest upcoming sunrise or sunset event
+        function findNextSunEvent() {
+            var now = new Date();
+            return locations.find(function(location) {
+                return (location.tag.startsWith('01 sunrise') && location.sunrise > now) ||
+                    (location.tag.startsWith('01 sunset') && location.sunset > now) ||
+                    (location.tag.startsWith('01 sunset') && location.sunset <= now && (now - location.sunset) <= 30 * 60 * 1000);
+            });
+        }
+
+
+
+// Ensure the YouTube API is loaded before initializing the player
+function onYouTubeIframeAPIReady() {
+    if (typeof YT !== 'undefined' && YT.Player) {
+        initializePlayer(currentVideoId);
+    } else {
+        console.error('YouTube API not loaded or YT.Player not available.');
+    }
+}
+
+// Initialize YouTube API and player when DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    onYouTubeIframeAPIReady();
+});
+
+        // Function to initialize the YouTube player
+function initializePlayer(videoId) {
+    player = new YT.Player('player', {
+        height: '360',
+        width: '640',
+        videoId: videoId,
+        playerVars: {
+            'autoplay': 1,
+            'mute': 1,
+            'controls': 0,
+            'loop': 1,
+            'playlist': videoId
+        },
+        events: {
+            'onReady': onPlayerReady,
+            'onStateChange': onPlayerStateChange
+        }
+    });
+}
+
+// Function to handle fullscreen button click
+document.getElementById('fullscreenButton').addEventListener('click', function() {
+    toggleFullscreen();
+});
+
+// Function to toggle fullscreen mode
+function toggleFullscreen() {
+    var playerElement = document.getElementById('player');
+    if (!document.fullscreenElement && !document.mozFullScreenElement &&
+        !document.webkitFullscreenElement && !document.msFullscreenElement) {
+        if (playerElement.requestFullscreen) {
+            playerElement.requestFullscreen();
+        } else if (playerElement.msRequestFullscreen) {
+            playerElement.msRequestFullscreen();
+        } else if (playerElement.mozRequestFullScreen) {
+            playerElement.mozRequestFullScreen();
+        } else if (playerElement.webkitRequestFullscreen) {
+            playerElement.webkitRequestFullscreen(Element.ALLOW_KEYBOARD_INPUT);
+        }
+    } else {
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        } else if (document.msExitFullscreen) {
+            document.msExitFullscreen();
+        } else if (document.mozCancelFullScreen) {
+            document.mozCancelFullScreen();
+        } else if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+        }
+    }
+}
+
+        // Function called when player is ready
+        function onPlayerReady(event) {
+            playerReady = true;
+            event.target.playVideo();
+            initializeSunTimes();  // Initialize sun times after player is ready
+            scheduleNextEvent();
+        }
+
+        // Function called when player state changes
+        function onPlayerStateChange(event) {
+            if (event.data === YT.PlayerState.ENDED) {
+                event.target.playVideo();
+            }
+        }
+
+        // Function to schedule the next sunrise or sunset event
+        function scheduleNextEvent() {
+            var now = new Date();
+            var closestEvent = findNextSunEvent();
+
+            if (!closestEvent) {
+                console.error('No events found within the threshold.');
+                return;
+            }
+
+            var delay = Math.min(closestEvent.hoursToEvent * 60 * 60 * 1000, 30 * 60 * 1000); // Limit to 30 minutes
+
+            setTimeout(function() {
+                switchStream(closestEvent);
+            }, delay);
+        }
+
+        // Function to switch streams based on user selection or scheduled event
+        function switchStream(location) {
+            if (!playerReady) {
+                console.error('Player is not ready yet');
+                return;
+            }
+
+            // Attempt to load the video specified by location.youtubeId
+            player.loadVideoById(location.youtubeId);
+            player.playVideo();
+
+            // Update UI with current location and tag
+            document.getElementById('location').textContent = `${location.location} : Next event in ${location.hoursToEvent} hours`;
+
+            // Handle video load errors
+            player.addEventListener('onError', function(event) {
+                console.error('Error loading video:', event.data);
+                // If video is unavailable (error code 100), skip to the next event
+                if (event.data === 100) {
+                    console.log('Video unavailable. Skipping to the next event.');
+                    scheduleNextEvent();
+                }
+            });
+        }
+
+        // Function to handle dropdown menu change
+        function handleDropdownChange() {
+            var dropdown = document.getElementById('streamSelect');
+            var selectedValue = dropdown.value;
+
+            switch (selectedValue) {
+                case 'closestSunrise':
+                    var closestSunrise = locations.find(function(location) {
+                        return location.tag.startsWith('01 sunrise');
+                    });
+                    switchStream(closestSunrise);
+                    populateSpecificEventDropdown('sunrise');
+                    break;
+                case 'closestSunset':
+                    var closestSunset = locations.find(function(location) {
+                        return location.tag.startsWith('01 sunset');
+                    });
+                    switchStream(closestSunset);
+                    populateSpecificEventDropdown('sunset');
+                    break;
+                default:
+                    console.error('Invalid selection');
+            }
+        }
+
+        // Function to handle specific event dropdown change
+        function handleSpecificEventChange() {
+            var dropdown = document.getElementById('specificEventSelect');
+            var selectedValue = dropdown.value;
+
+            if (selectedValue) {
+                var selectedLocation = locations.find(function(location) {
+                    return location.tag === selectedValue;
+                });
+                switchStream(selectedLocation);
+            }
+        }
+
+        // Function to populate specific event dropdown options
+        function populateSpecificEventDropdown(type = 'sunset') {
+            var specificEventSelect = document.getElementById('specificEventSelect');
+            specificEventSelect.innerHTML = '<option value="">-- Select --</option>';
+
+            locations.forEach(function(location) {
+                if (location.tag.endsWith(type)) {
+                    var option = document.createElement('option');
+                    option.value = location.tag;
+                    option.text = `${location.tag} - ${location.location}`;
+                    specificEventSelect.appendChild(option);
+                }
+            });
+
+            // Automatically select the first event
+            specificEventSelect.value = `01 ${type}`;
+        }
+
+
+        // Log the initial state of locations
+        console.log('Initial state of locations:', locations);
+
+        // Initialize sunrise and sunset times
+        document.addEventListener('DOMContentLoaded', function() {
+            onYouTubeIframeAPIReady();
+        });
+    </script>
+</head>
+<body>
+    <div id="header">
+        <h1>Forever Sunset</h1>
+        <p>by rudi-renoir</p>
+    </div>
+    <div id="player-container">
+        <div id="player"></div>
+        <div id="location"></div>
+        <div class="dropdown-container">
+            <label for="streamSelect" class="dropdown-label">Choose stream:</label>
+            <div class="dropdown">
+                <select id="streamSelect" onchange="handleDropdownChange()">
+                    <option value="">-- Select --</option>
+                    <option value="closestSunrise">Next live Sunrise</option>
+                    <option value="closestSunset">Next live Sunset</option>
+                </select>
+            </div>
+        </div>
+        <div class="dropdown-container">
+            <label for="specificEventSelect" class="dropdown-label">Choose specific event:</label>
+            <div class="dropdown">
+                <select id="specificEventSelect" onchange="handleSpecificEventChange()">
+                    <option value="">-- Select --</option>
+                    <!-- Options will be dynamically added via JavaScript -->
+                </select>
+            </div>
+        </div>
+
+    </div>
+    <div id="debug-container">
+        <div id="debug">
+            <h3>Debug Information:</h3>
+            <!-- Debug information will be dynamically added here -->
+        </div>
+        
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/suncalc/1.8.0/suncalc.min.js"></script>
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <script src="locations.js"></script>
+    <script>
+        // JavaScript code goes here
+    </script>
+</body>
+</html>
